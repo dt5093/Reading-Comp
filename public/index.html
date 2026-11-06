@@ -192,11 +192,12 @@
     $("summary").disabled = true;
     updateCount();
     try {
-      current = await post("/api/story");
+      current = await post("/api/story", { exclude: readTitles() });
+      rememberTitle(current.title);
       $("storyStatus").className = "hidden";
       $("storyTitle").textContent = current.title;
       $("storyTitle").classList.remove("hidden");
-      for (const para of current.story.split(/\n\s*\n/)) {
+      for (const para of current.story.split(/\n+/).filter((p) => p.trim())) {
         const p = document.createElement("p");
         p.textContent = para.trim();
         $("storyText").appendChild(p);
@@ -227,6 +228,10 @@
     gs.textContent = "Reading your summary…";
     gs.className = "status";
     $("resultCard").classList.add("hidden");
+    // If the grader is busy with classmates' summaries, say so instead of looking frozen.
+    const lineTimer = setTimeout(() => {
+      gs.textContent = "Lots of classmates are submitting right now, so you're in line. Hang tight, this can take a few minutes. Don't close the page!";
+    }, 5000);
     try {
       const r = await post("/api/grade", { name, title: current.title, story: current.story, summary });
       const badge = $("badge");
@@ -241,8 +246,21 @@
     } catch (err) {
       showError(gs, err.message);
     } finally {
+      clearTimeout(lineTimer);
       setBusy(false);
     }
+  }
+
+  // Remember which stories this browser has seen so "New story" doesn't repeat.
+  function readTitles() {
+    try { return JSON.parse(localStorage.getItem("seenStories") || "[]"); } catch { return []; }
+  }
+  function rememberTitle(title) {
+    try {
+      const seen = readTitles().filter((t) => t !== title);
+      seen.push(title);
+      localStorage.setItem("seenStories", JSON.stringify(seen.slice(-200)));
+    } catch {}
   }
 
   function fillList(id, items) {
