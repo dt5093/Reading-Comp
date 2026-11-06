@@ -6,6 +6,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
@@ -14,6 +15,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
 const GRADES = ["1", "2", "2+", "3", "3+", "4"];
+const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || "";
+const DATA_FILE = process.env.DATA_FILE || path.join(here, "data", "submissions.json");
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
 
@@ -53,13 +56,13 @@ async function generateStory() {
       {
         role: "user",
         content:
-          `Write a brand-new short story (300-450 words) loosely about: ${theme}.\n\n` +
+          `Write a brand-new very short story (1-2 paragraphs, 120-220 words total) loosely about: ${theme}.\n\n` +
           "Requirements:\n" +
           "- A clear main character with a problem or goal\n" +
-          "- A clear beginning, middle, and end, with 3-5 key events a student could summarize\n" +
-          "- Some minor details that are NOT essential (so students practice leaving them out)\n" +
+          "- A clear beginning, middle, and end, with 2-4 key events a student could summarize\n" +
+          "- A few minor details that are NOT essential (so students practice leaving them out)\n" +
           "- A satisfying resolution and an implied lesson or theme\n" +
-          "- 4-7 paragraphs; vary sentence length; some vivid vocabulary but nothing obscure",
+          "- Exactly 1 or 2 paragraphs; vary sentence length; some vivid vocabulary but nothing obscure",
       },
     ],
     output_config: { ...baseParams.output_config, format: betaZodOutputFormat(StorySchema) },
@@ -82,6 +85,8 @@ const GradeSchema = z.object({
 const GRADER_SYSTEM = `You are a warm, encouraging 7th-grade English teacher grading a student's summary of a short story.
 
 GRADING SCALE (use exactly one of: 1, 2, 2+, 3, 3+, 4):
+The stories are short (1-2 paragraphs), so a good summary is usually just 2-4 sentences.
+
 - 4: Excellent. Captures the main character, the central problem, the key events in order, and the resolution. Written in the student's own words, concise, no opinions, and leaves out minor details. It does NOT need to be perfect - a strong 7th-grade summary earns a 4.
 - 3+: Very good. Nearly everything a 4 has, with one small gap (a slightly fuzzy ending, one unnecessary detail, a bit wordy).
 - 3: Good / meets expectations. Gets the main idea and most key events, but misses something notable, includes several minor details, or copies a few phrases straight from the text.
@@ -116,6 +121,38 @@ async function gradeSummary(title, story, summary) {
   return response.parsed_output;
 }
 
+// ---------- Saved submissions ----------
+
+let writeQueue = Promise.resolve();
+
+async function loadSubmissions() {
+  try {
+    return JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+// Writes are serialized so two students submitting at once can't clobber each other.
+function updateSubmissions(fn) {
+  writeQueue = writeQueue.then(async () => {
+    const list = fn(await loadSubmissions());
+    await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
+    const tmp = DATA_FILE + ".tmp";
+    await fs.writeFile(tmp, JSON.stringify(list, null, 2));
+    await fs.rename(tmp, DATA_FILE);
+  });
+  return writeQueue;
+}
+
+function isTeacher(req) {
+  if (!TEACHER_PASSWORD) return false;
+  const given = Buffer.from(String(req.headers["x-teacher-password"] || ""));
+  const want = Buffer.from(TEACHER_PASSWORD);
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
+}
+
 // ---------- HTTP plumbing ----------
 
 function sendJson(res, status, body) {
@@ -142,10 +179,23 @@ function friendlyError(err) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
-      const html = await fs.readFile(path.join(here, "public", "index.html"));
+    const pages = { "/": "index.html", "/index.html": "index.html", "/teacher": "teacher.html" };
+    if (req.method === "GET" && pages[req.url]) {
+      const html = await fs.readFile(path.join(here, "public", pages[req.url]));
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       return res.end(html);
+    }
+
+    if (req.url === "/api/submissions") {
+      if (!TEACHER_PASSWORD) {
+        return sendJson(res, 503, { error: "Teacher view is off. Start the server with TEACHER_PASSWORD set." });
+      }
+      if (!isTeacher(req)) return sendJson(res, 401, { error: "Wrong password." });
+      if (req.method === "GET") return sendJson(res, 200, await loadSubmissions());
+      if (req.method === "DELETE") {
+        await updateSubmissions(() => []);
+        return sendJson(res, 200, { ok: true });
+      }
     }
 
     if (req.method === "POST" && req.url === "/api/story") {
@@ -153,7 +203,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && req.url === "/api/grade") {
-      const { title, story, summary } = await readJson(req);
+      const { name, title, story, summary } = await readJson(req);
+      const student = typeof name === "string" ? name.trim().slice(0, 80) : "";
+      if (!student) return sendJson(res, 400, { error: "Please type your name first." });
       if (typeof story !== "string" || typeof summary !== "string" || !story.trim()) {
         return sendJson(res, 400, { error: "Missing story or summary." });
       }
@@ -166,6 +218,18 @@ const server = http.createServer(async (req, res) => {
       }
       const result = await gradeSummary(String(title || "Story"), story, summary);
       if (!GRADES.includes(result.grade)) result.grade = "3";
+      await updateSubmissions((list) => [
+        ...list,
+        {
+          id: crypto.randomUUID(),
+          submittedAt: new Date().toISOString(),
+          student,
+          title: String(title || "Story"),
+          story,
+          summary,
+          ...result,
+        },
+      ]);
       return sendJson(res, 200, result);
     }
 

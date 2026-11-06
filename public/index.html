@@ -63,7 +63,14 @@
       border-radius: 8px;
       resize: vertical;
     }
-    textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .name-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+    .name-row label { margin: 0; }
+    input[type=text] {
+      font: inherit; color: var(--ink); background: var(--card);
+      border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
+      flex: 1; min-width: 180px; max-width: 320px;
+    }
+    input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
     .count { color: var(--muted); font-size: 0.9rem; margin-left: auto; }
     button {
@@ -102,6 +109,11 @@
 <main>
   <h1>Summary Practice</h1>
   <p class="sub">Read the story carefully, then write a summary in your own words.</p>
+
+  <div class="name-row">
+    <label for="name">Your name</label>
+    <input type="text" id="name" autocomplete="name" placeholder="First and last name" maxlength="80" />
+  </div>
 
   <section class="card story" id="storyCard">
     <p class="status" id="storyStatus">Loading a story…</p>
@@ -200,7 +212,13 @@
   async function grade() {
     if (busy || !current) return;
     const summary = $("summary").value.trim();
+    const name = $("name").value.trim();
     const gs = $("gradeStatus");
+    if (!name) {
+      showError(gs, "Type your name at the top first so your teacher sees your grade.");
+      $("name").focus();
+      return;
+    }
     if (summary.split(/\s+/).filter(Boolean).length < 5) {
       showError(gs, "Write a little more first — a few sentences at least.");
       return;
@@ -210,7 +228,7 @@
     gs.className = "status";
     $("resultCard").classList.add("hidden");
     try {
-      const r = await post("/api/grade", { title: current.title, story: current.story, summary });
+      const r = await post("/api/grade", { name, title: current.title, story: current.story, summary });
       const badge = $("badge");
       badge.textContent = r.grade;
       badge.className = "badge g" + r.grade.replace("+", "p");
@@ -243,6 +261,10 @@
   }
 
   $("summary").addEventListener("input", updateCount);
+  try { $("name").value = localStorage.getItem("studentName") || ""; } catch {}
+  $("name").addEventListener("input", () => {
+    try { localStorage.setItem("studentName", $("name").value.trim()); } catch {}
+  });
   $("submitBtn").addEventListener("click", grade);
   $("newBtn").addEventListener("click", loadStory);
   loadStory();

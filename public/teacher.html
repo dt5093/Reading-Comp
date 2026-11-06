@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teacher Gradebook</title>
+  <style>
+    :root {
+      --bg: #f6f4ef; --card: #ffffff; --ink: #1f2328; --muted: #5b6168;
+      --accent: #2f6fdb; --accent-ink: #ffffff; --border: #e2ded5;
+      --good: #1f8a4c; --mid: #c98a12; --low: #c2453a; --hover: #f1eee7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181b; --card: #1f2226; --ink: #e8e6e1; --muted: #a0a6ad;
+        --accent: #6b9cf0; --accent-ink: #0d1117; --border: #33373d;
+        --good: #4cc27f; --mid: #e3b04b; --low: #ec7a70; --hover: #272a2f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; }
+    input[type=text], input[type=password], select {
+      font: inherit; color: var(--ink); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
+    }
+    button {
+      font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 8px;
+      border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); cursor: pointer;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    button.danger { background: transparent; color: var(--low); border-color: var(--low); }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .spacer { flex: 1; }
+    .error { color: var(--low); font-weight: 600; }
+    .muted { color: var(--muted); }
+    .hidden { display: none !important; }
+    .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; min-width: 110px; }
+    .stat b { display: block; font-size: 1.4rem; }
+    .stat span { color: var(--muted); font-size: 0.85rem; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { font-size: 0.85rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
+    tr.item { cursor: pointer; }
+    tr.item:hover { background: var(--hover); }
+    td.summary { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+    .pill { display: inline-block; min-width: 38px; text-align: center; padding: 2px 8px; border-radius: 999px; color: #fff; font-weight: 700; }
+    .g4, .g3p { background: var(--good); }
+    .g3, .g2p { background: var(--mid); }
+    .g2, .g1 { background: var(--low); }
+    tr.detail td { background: var(--hover); }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 720px) { .detail-grid { grid-template-columns: 1fr; } }
+    .detail-grid h3 { font-size: 0.9rem; margin: 0 0 4px; color: var(--muted); }
+    .detail-grid p { margin: 0 0 12px; white-space: pre-wrap; }
+    .detail-grid ul { margin: 0 0 12px; padding-left: 18px; }
+    .story { font-family: Georgia, "Times New Roman", serif; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Teacher Gradebook</h1>
+
+  <section class="card" id="login">
+    <form class="row" id="loginForm">
+      <label for="pw">Teacher password</label>
+      <input type="password" id="pw" autocomplete="current-password" />
+      <button type="submit">Open gradebook</button>
+    </form>
+    <p class="error hidden" id="loginError"></p>
+  </section>
+
+  <section id="book" class="hidden">
+    <div class="stats" id="stats"></div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom: 12px;">
+        <input type="text" id="search" placeholder="Search student or story…" />
+        <select id="gradeFilter">
+          <option value="">All grades</option>
+          <option>4</option><option>3+</option><option>3</option>
+          <option>2+</option><option>2</option><option>1</option>
+        </select>
+        <label class="row muted" style="gap:6px;"><input type="checkbox" id="latestOnly" /> Latest per student</label>
+        <span class="spacer"></span>
+        <button class="secondary" id="refreshBtn">Refresh</button>
+        <button class="secondary" id="csvBtn">Download CSV</button>
+        <button class="danger" id="clearBtn">Clear all</button>
+      </div>
+      <p class="muted" id="empty">No submissions yet.</p>
+      <div class="table-wrap">
+        <table id="table" class="hidden">
+          <thead>
+            <tr><th>When</th><th>Student</th><th>Story</th><th>Grade</th><th>Summary (click a row for details)</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const GRADE_VALUE = { "1": 1, "2": 2, "2+": 2.5, "3": 3, "3+": 3.5, "4": 4 };
+  let password = "";
+  let all = [];
+  let openId = null;
+
+  try { password = sessionStorage.getItem("teacherPw") || ""; } catch {}
+
+  async function api(method) {
+    const res = await fetch("/api/submissions", { method, headers: { "x-teacher-password": password } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || "Something went wrong."), { status: res.status });
+    return data;
+  }
+
+  async function load() {
+    try {
+      all = await api("GET");
+      all.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+      try { sessionStorage.setItem("teacherPw", password); } catch {}
+      $("login").classList.add("hidden");
+      $("book").classList.remove("hidden");
+      render();
+    } catch (err) {
+      $("login").classList.remove("hidden");
+      $("book").classList.add("hidden");
+      if (password || err.status !== 401) {
+        $("loginError").textContent = err.message;
+        $("loginError").classList.remove("hidden");
+      }
+      try { sessionStorage.removeItem("teacherPw"); } catch {}
+    }
+  }
+
+  function filtered() {
+    const q = $("search").value.trim().toLowerCase();
+    const g = $("gradeFilter").value;
+    let list = all.filter((s) =>
+      (!q || s.student.toLowerCase().includes(q) || s.title.toLowerCase().includes(q)) &&
+      (!g || s.grade === g)
+    );
+    if ($("latestOnly").checked) {
+      const seen = new Set();
+      list = list.filter((s) => {
+        const key = s.student.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+    return list;
+  }
+
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+
+  function el(tag, props = {}, children = []) {
+    const e = Object.assign(document.createElement(tag), props);
+    for (const c of [].concat(children)) e.append(c);
+    return e;
+  }
+
+  function pill(grade) {
+    return el("span", { className: "pill g" + grade.replace("+", "p"), textContent: grade });
+  }
+
+  function renderStats(list) {
+    const students = new Set(list.map((s) => s.student.toLowerCase()));
+    const avg = list.length ? list.reduce((t, s) => t + GRADE_VALUE[s.grade], 0) / list.length : 0;
+    const atOrAbove3 = list.filter((s) => GRADE_VALUE[s.grade] >= 3).length;
+    const stats = [
+      [list.length, "submissions"],
+      [students.size, "students"],
+      [list.length ? avg.toFixed(1) : "–", "average grade"],
+      [list.length ? Math.round((100 * atOrAbove3) / list.length) + "%" : "–", "scored 3 or higher"],
+    ];
+    $("stats").replaceChildren(...stats.map(([v, l]) => el("div", { className: "stat" }, [el("b", { textContent: v }), el("span", { textContent: l })])));
+  }
+
+  function list(items) {
+    return el("ul", {}, (items || []).map((t) => el("li", { textContent: t })));
+  }
+
+  function render() {
+    const list_ = filtered();
+    renderStats(list_);
+    $("empty").textContent = all.length ? "No submissions match these filters." : "No submissions yet.";
+    $("empty").classList.toggle("hidden", list_.length > 0);
+    $("table").classList.toggle("hidden", list_.length === 0);
+    const rows = [];
+    for (const s of list_) {
+      const tr = el("tr", { className: "item" }, [
+        el("td", { textContent: fmtDate(s.submittedAt) }),
+        el("td", { textContent: s.student }),
+        el("td", { textContent: s.title }),
+        el("td", {}, pill(s.grade)),
+        el("td", { className: "summary", textContent: s.summary }),
+      ]);
+      tr.addEventListener("click", () => { openId = openId === s.id ? null : s.id; render(); });
+      rows.push(tr);
+      if (openId === s.id) {
+        rows.push(el("tr", { className: "detail" }, el("td", { colSpan: 5 }, el("div", { className: "detail-grid" }, [
+          el("div", {}, [
+            el("h3", { textContent: "Student's summary" }), el("p", { textContent: s.summary }),
+            el("h3", { textContent: "Feedback shown to student" }), el("p", { textContent: s.feedback }),
+            el("h3", { textContent: "Strengths" }), list(s.strengths),
+            el("h3", { textContent: "Suggestions" }), list(s.improvements),
+          ]),
+          el("div", {}, [
+            el("h3", { textContent: "Story: " + s.title }), el("p", { className: "story", textContent: s.story }),
+          ]),
+        ]))));
+      }
+    }
+    $("rows").replaceChildren(...rows);
+  }
+
+  function csvCell(v) {
+    const s = Array.isArray(v) ? v.join(" | ") : String(v ?? "");
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function downloadCsv() {
+    const cols = ["submittedAt", "student", "title", "grade", "summary", "feedback", "strengths", "improvements", "story"];
+    const lines = [cols.join(",")].concat(filtered().map((s) => cols.map((c) => csvCell(s[c])).join(",")));
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv" });
+    const a = el("a", { href: URL.createObjectURL(blob), download: "summary-grades-" + new Date().toISOString().slice(0, 10) + ".csv" });
+    document.body.append(a); a.click(); a.remove();
+  }
+
+  $("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    password = $("pw").value;
+    $("loginError").classList.add("hidden");
+    load();
+  });
+  for (const id of ["search", "gradeFilter", "latestOnly"]) $(id).addEventListener("input", render);
+  $("refreshBtn").addEventListener("click", load);
+  $("csvBtn").addEventListener("click", downloadCsv);
+  $("clearBtn").addEventListener("click", async () => {
+    if (!confirm("Delete ALL saved submissions? Download a CSV first if you want a copy. This can't be undone.")) return;
+    try { await api("DELETE"); all = []; render(); } catch (err) { alert(err.message); }
+  });
+
+  load();
+</script>
+</body>
+</html>
