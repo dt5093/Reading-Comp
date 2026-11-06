@@ -36,6 +36,7 @@ Optional environment variables:
 - `PORT` – default `3000`
 - `TEACHER_PASSWORD` – required for the teacher gradebook; without it `/teacher` stays locked
 - `DATA_FILE` – where submissions are saved, default `data/submissions.json`
+- `SHEETS_WEBHOOK_URL`, `SHEETS_SECRET` – optional, copy every grade to a Google Sheet (see below)
 - `AI_PROVIDER` – `groq` (default), `gemini`, or `claude`
 - `GROQ_MODEL` – default `openai/gpt-oss-120b`. Groq retires models regularly; if you get "model not found" errors, pick a current one from https://console.groq.com/docs/models.
 - `STORY_SOURCE` – `bank` (default: stories from `stories.json`, instant and free) or `ai` (the AI writes a new story every time; uses up the free rate limit fast)
@@ -55,7 +56,31 @@ If any of that is a problem, switch providers with `AI_PROVIDER` (e.g. `claude` 
 
 `/teacher` shows every graded submission: time, student name, story, grade, and summary. Click a row to see the full summary, the feedback the student got, and the story they read. You can search by student or story, filter by grade, show only each student's latest attempt, download everything as a CSV (opens in Excel / Google Sheets), or clear the list.
 
-Submissions are saved to a JSON file on the server. If you host it somewhere with a temporary disk (e.g. free tiers that reset on redeploy), download the CSV regularly or attach a persistent disk and point `DATA_FILE` at it.
+Submissions are saved to a JSON file on the server. On free hosting (like Render's free plan) that file is **wiped whenever the app restarts or wakes from sleep**, so either download the CSV after each class or set up the Google Sheet below.
+
+## Save grades to a Google Sheet (recommended on free hosting)
+
+Every graded summary is also added as a row in a Google Sheet, so grades are never lost. Takes about 5 minutes. Use a personal Google account; school accounts often block Apps Script.
+
+1. Create a new Google Sheet (name it something like "Summary Grades").
+2. In the Sheet: **Extensions → Apps Script**. Delete what's there and paste in all of [`scripts/google-sheet.gs`](scripts/google-sheet.gs).
+3. At the top of the script, replace `PASTE-YOUR-SECRET-HERE` with a long made-up phrase (e.g. `purple-otter-ladder-7392`). Click **Save** (disk icon).
+4. Click **Deploy → New deployment**. Click the gear next to "Select type" → **Web app**. Set:
+   - **Execute as:** Me
+   - **Who has access:** Anyone
+
+   Click **Deploy**, then **Authorize access** and pick your account. Google will warn "Google hasn't verified this app": click **Advanced → Go to (your project) (unsafe)** → **Allow**. (It's your own script, only writing to your own sheet.)
+5. Copy the **Web app URL** (ends in `/exec`).
+6. In Render → your service → **Environment**, add:
+   - `SHEETS_WEBHOOK_URL` = the Web app URL
+   - `SHEETS_SECRET` = the same phrase from step 3
+
+   Save; Render restarts the app.
+7. Open `/teacher`, log in, click **Test Google Sheet**. A test row should appear on a "Grades" tab in your Sheet.
+
+If you change the script later, you must **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** for changes to take effect (the URL stays the same).
+
+"Who has access: Anyone" only means the app can send rows without logging in to Google; nobody can *read* your sheet, and the secret stops strangers from adding rows. If Google is briefly down, the app retries in the background for a few minutes.
 
 ## Story bank
 
@@ -74,5 +99,6 @@ Each browser remembers which stories it has seen, so "New story" won't repeat un
 - `server.js` – tiny Node server with endpoints `POST /api/story`, `POST /api/grade`, and the password-protected `GET`/`DELETE /api/submissions`. The grading rubric lives in `GRADER_SYSTEM`; edit it to tune strictness.
 - `public/index.html` – the student page (no build step).
 - `public/teacher.html` – the teacher gradebook.
+- `scripts/google-sheet.gs` – Google Apps Script that receives grades and appends them to a Sheet.
 
 The API key stays on the server; students never see it.

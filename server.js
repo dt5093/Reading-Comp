@@ -17,6 +17,12 @@ const PORT = Number(process.env.PORT) || 3000;
 const GRADES = ["1", "2", "2+", "3", "3+", "4"];
 const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || "";
 const DATA_FILE = process.env.DATA_FILE || path.join(here, "data", "submissions.json");
+// Optional: copy every graded submission to a Google Sheet (see scripts/google-sheet.gs).
+const SHEETS_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || "";
+const SHEETS_SECRET = process.env.SHEETS_SECRET || "";
+if (SHEETS_WEBHOOK_URL && !SHEETS_SECRET) {
+  console.warn("SHEETS_WEBHOOK_URL is set but SHEETS_SECRET is not; the Google Sheet will reject rows.");
+}
 
 // ---------- Stories ----------
 // By default stories come from the built-in bank (stories.json): instant, free,
@@ -112,6 +118,43 @@ function updateSubmissions(fn) {
   return writeQueue;
 }
 
+// ---------- Google Sheet backup ----------
+
+async function sendToSheet(entry) {
+  if (!SHEETS_WEBHOOK_URL) return { ok: false, error: "Google Sheet isn't set up (SHEETS_WEBHOOK_URL is empty)." };
+  const { story, ...row } = entry; // the sheet gets the title, not the whole story
+  try {
+    // Apps Script answers with a redirect to the result; fetch follows it.
+    const res = await fetch(SHEETS_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...row, secret: SHEETS_SECRET }),
+      redirect: "follow",
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return { ok: false, error: `Google returned an unexpected page (HTTP ${res.status}). Check the web app URL and that access is set to "Anyone".` };
+    }
+    return data.ok ? { ok: true } : { ok: false, error: data.error || "Google Sheet rejected the row." };
+  } catch (err) {
+    return { ok: false, error: `Couldn't reach Google: ${err.message}` };
+  }
+}
+
+// Don't make students wait on Google; retry a few times in the background.
+async function backUpToSheet(entry) {
+  if (!SHEETS_WEBHOOK_URL) return;
+  for (const wait of [0, 5000, 30000, 120000]) {
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    const result = await sendToSheet(entry);
+    if (result.ok) return;
+    console.error(`Google Sheet backup failed for ${entry.student}: ${result.error}`);
+  }
+}
+
 function isTeacher(req) {
   if (!TEACHER_PASSWORD) return false;
   const given = Buffer.from(String(req.headers["x-teacher-password"] || ""));
@@ -168,6 +211,21 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "POST" && req.url === "/api/sheet-test") {
+      if (!isTeacher(req)) return sendJson(res, 401, { error: "Wrong password." });
+      const result = await sendToSheet({
+        submittedAt: new Date().toISOString(),
+        student: "TEST ROW (safe to delete)",
+        title: "Connection test",
+        grade: "-",
+        summary: "If you can see this row, grades are being saved to this Google Sheet.",
+        feedback: "",
+        strengths: [],
+        improvements: [],
+      });
+      return sendJson(res, result.ok ? 200 : 502, result.ok ? { ok: true } : { error: result.error });
+    }
+
     if (req.method === "POST" && req.url === "/api/story") {
       if (STORY_SOURCE === "ai") return sendJson(res, 200, await generateStory());
       const { exclude } = await readJson(req);
@@ -192,18 +250,17 @@ const server = http.createServer(async (req, res) => {
       if (!GRADES.includes(result.grade)) result.grade = "3";
       result.strengths = result.strengths.slice(0, 3);
       result.improvements = result.improvements.slice(0, 2);
-      await updateSubmissions((list) => [
-        ...list,
-        {
-          id: crypto.randomUUID(),
-          submittedAt: new Date().toISOString(),
-          student,
-          title: String(title || "Story"),
-          story,
-          summary,
-          ...result,
-        },
-      ]);
+      const entry = {
+        id: crypto.randomUUID(),
+        submittedAt: new Date().toISOString(),
+        student,
+        title: String(title || "Story"),
+        story,
+        summary,
+        ...result,
+      };
+      await updateSubmissions((list) => [...list, entry]);
+      backUpToSheet(entry);
       return sendJson(res, 200, result);
     }
 
