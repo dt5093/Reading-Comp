@@ -57,7 +57,7 @@ Submissions are saved to a JSON file on the server. If you host it somewhere wit
 ## How it works
 
 - `llm.js` – the AI layer: Gemini via its REST API, or Claude via the Anthropic SDK. Both return JSON checked against the same schema.
-- `server.js` – tiny Node server with endpoints `POST /api/story`, `POST /api/grade`, and the password-protected `GET`/`DELETE /api/submissions`. Both use structured outputs so responses are always valid JSON. The grading rubric lives in `GRADER_SYSTEM`; edit it to tune strictness.
+- `server.js` – tiny Node server with endpoints `POST /api/story`, `POST /api/grade`, and the password-protected `GET`/`DELETE /api/submissions`. The grading rubric lives in `GRADER_SYSTEM`; edit it to tune strictness.
 - `public/index.html` – the student page (no build step).
 - `public/teacher.html` – the teacher gradebook.
 
