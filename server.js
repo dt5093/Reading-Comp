@@ -1,5 +1,5 @@
 // Reading Comprehension & Summary Practice
-// A tiny web server: an AI (Gemini by default, or Claude) writes a short story,
+// A tiny web server: an AI (Groq by default, or Gemini / Claude) writes a short story,
 // the student summarizes it, and the AI grades the summary on the class scale
 // (1, 2, 2+, 3, 3+, 4). See llm.js for the provider setup.
 
@@ -107,7 +107,8 @@ async function gradeSummary(title, story, summary) {
     prompt:
       `<story title="${title.replace(/"/g, "'")}">\n${story}\n</story>\n\n` +
       `<student_summary>\n${summary}\n</student_summary>\n\n` +
-      "Grade the student's summary using the scale. Respond with JSON: grade, strengths, improvements, feedback.",
+      "Grade the student's summary using the scale. Respond with JSON in exactly this shape:\n" +
+      '{"grade": "1" | "2" | "2+" | "3" | "3+" | "4", "strengths": ["..."], "improvements": ["..."], "feedback": "..."}',
     zodSchema: GradeSchema,
     geminiSchema: GradeGeminiSchema,
   });

@@ -1,22 +1,26 @@
 // AI provider layer. One function, generateJson(), that returns a validated
-// JSON object from either Google Gemini (default, free tier) or Claude.
+// JSON object from Groq (default, free tier), Google Gemini, or Claude.
 //
-//   AI_PROVIDER=gemini  (default)  needs GEMINI_API_KEY
+//   AI_PROVIDER=groq    (default)  needs GROQ_API_KEY
+//   AI_PROVIDER=gemini             needs GEMINI_API_KEY
 //   AI_PROVIDER=claude             needs ANTHROPIC_API_KEY
 
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
-export const PROVIDER = (process.env.AI_PROVIDER || "gemini").toLowerCase();
+export const PROVIDER = (process.env.AI_PROVIDER || "groq").toLowerCase();
+
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const GROQ_BASE_URL = process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-haiku-5-5";
 
-export const MODEL = PROVIDER === "claude" ? CLAUDE_MODEL : GEMINI_MODEL;
+export const MODEL = { groq: GROQ_MODEL, gemini: GEMINI_MODEL, claude: CLAUDE_MODEL }[PROVIDER];
 
-if (!["gemini", "claude"].includes(PROVIDER)) {
-  throw new Error(`AI_PROVIDER must be "gemini" or "claude", got "${PROVIDER}"`);
+if (!MODEL) {
+  throw new Error(`AI_PROVIDER must be "groq", "gemini", or "claude", got "${PROVIDER}"`);
 }
 
 // Errors the web server turns into student-friendly messages.
@@ -35,12 +39,71 @@ export class AIError extends Error {
  * @param {object} opts.geminiSchema  the same shape in Gemini's responseSchema format
  */
 export async function generateJson(opts) {
-  return PROVIDER === "claude" ? claudeJson(opts) : geminiJson(opts);
+  if (PROVIDER === "claude") return claudeJson(opts);
+  if (PROVIDER === "gemini") return geminiJson(opts);
+  return groqJson(opts);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Free tiers allow only a handful of requests per minute, so when a whole class
+// hits "submit" together, wait and retry instead of failing right away.
+async function fetchWithRetry(url, init, serviceName) {
+  const waits = [2000, 5000, 10000, 20000];
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      throw new AIError("connection", `Could not reach ${serviceName}: ${err.message}`);
+    }
+    const retryable = res.status === 429 || res.status === 500 || res.status === 503;
+    if (!retryable || attempt >= waits.length) return res;
+    const retryAfter = Number(res.headers.get("retry-after")) * 1000;
+    const wait = retryAfter > 0 && retryAfter <= 30000 ? retryAfter : waits[attempt];
+    await sleep(wait + Math.random() * 1000);
+  }
+}
+
+// ---------- Groq (OpenAI-compatible REST) ----------
+
+async function groqJson({ system, prompt, zodSchema }) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new AIError("auth", "GROQ_API_KEY is not set");
+
+  const body = JSON.stringify({
+    model: GROQ_MODEL,
+    messages: [
+      { role: "system", content: system + "\n\nAlways reply with a single JSON object and nothing else." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  // JSON mode guarantees valid JSON but not the exact fields, so check the
+  // shape and give the model one more try if it got it wrong.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetchWithRetry(
+      `${GROQ_BASE_URL}/chat/completions`,
+      { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` }, body },
+      "Groq",
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data?.error?.message || `HTTP ${res.status}`;
+      if (res.status === 401 || res.status === 403) throw new AIError("auth", msg);
+      if (res.status === 429) throw new AIError("rate", msg);
+      throw new AIError("other", msg);
+    }
+    try {
+      return validate(data.choices?.[0]?.message?.content ?? "", zodSchema);
+    } catch (err) {
+      if (attempt >= 1) throw err;
+    }
+  }
 }
 
 // ---------- Gemini (REST) ----------
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function geminiJson({ system, prompt, zodSchema, geminiSchema }) {
   const key = process.env.GEMINI_API_KEY;
@@ -56,24 +119,11 @@ async function geminiJson({ system, prompt, zodSchema, geminiSchema }) {
     },
   });
 
-  // The free tier allows only a handful of requests per minute, so when a whole
-  // class hits "submit" together, wait and retry instead of failing right away.
-  const waits = [2000, 5000, 10000, 20000];
-  let res;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body,
-      });
-    } catch (err) {
-      throw new AIError("connection", `Could not reach Gemini: ${err.message}`);
-    }
-    const retryable = res.status === 429 || res.status === 500 || res.status === 503;
-    if (!retryable || attempt >= waits.length) break;
-    await sleep(waits[attempt] + Math.random() * 1000);
-  }
+  const res = await fetchWithRetry(
+    url,
+    { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body },
+    "Gemini",
+  );
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
