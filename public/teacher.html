@@ -89,6 +89,7 @@
         <span class="spacer"></span>
         <button class="secondary" id="refreshBtn">Refresh</button>
         <button class="secondary" id="csvBtn">Download CSV</button>
+        <button class="secondary" id="sheetBtn">Test Google Sheet</button>
         <button class="danger" id="clearBtn">Clear all</button>
       </div>
       <p class="muted" id="empty">No submissions yet.</p>
@@ -245,6 +246,24 @@
   for (const id of ["search", "gradeFilter", "latestOnly"]) $(id).addEventListener("input", render);
   $("refreshBtn").addEventListener("click", load);
   $("csvBtn").addEventListener("click", downloadCsv);
+  $("sheetBtn").addEventListener("click", async () => {
+    const btn = $("sheetBtn");
+    btn.disabled = true;
+    btn.textContent = "Testing…";
+    try {
+      const res = await fetch("/api/sheet-test", { method: "POST", headers: { "x-teacher-password": password } });
+      const data = await res.json().catch(() => ({}));
+      alert(res.ok
+        ? "It works! A test row was added to your Google Sheet (on the \"Grades\" tab). You can delete it."
+        : "Google Sheet problem: " + (data.error || "unknown error"));
+    } catch (err) {
+      alert("Google Sheet problem: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Test Google Sheet";
+    }
+  });
+
   $("clearBtn").addEventListener("click", async () => {
     if (!confirm("Delete ALL saved submissions? Download a CSV first if you want a copy. This can't be undone.")) return;
     try { await api("DELETE"); all = []; render(); } catch (err) { alert(err.message); }
