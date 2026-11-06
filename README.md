@@ -30,7 +30,7 @@ Optional environment variables:
 - `PORT` – default `3000`
 - `TEACHER_PASSWORD` – required for the teacher gradebook; without it `/teacher` stays locked
 - `DATA_FILE` – where submissions are saved, default `data/submissions.json`
-- `CLAUDE_MODEL` – default `claude-opus-5-5`. `claude-haiku-5-5` is much cheaper if cost matters for a whole class.
+- `CLAUDE_MODEL` – default `claude-haiku-5-5` (Claude's cheapest model, run at low effort). Each story or grade costs well under a tenth of a cent.
 
 ## Teacher gradebook
 
