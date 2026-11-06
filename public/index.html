@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Summary Practice</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --card: #ffffff;
+      --ink: #1f2328;
+      --muted: #5b6168;
+      --accent: #2f6fdb;
+      --accent-ink: #ffffff;
+      --border: #e2ded5;
+      --good: #1f8a4c;
+      --mid: #c98a12;
+      --low: #c2453a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181b;
+        --card: #1f2226;
+        --ink: #e8e6e1;
+        --muted: #a0a6ad;
+        --accent: #6b9cf0;
+        --accent-ink: #0d1117;
+        --border: #33373d;
+        --good: #4cc27f;
+        --mid: #e3b04b;
+        --low: #ec7a70;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin-bottom: 20px;
+    }
+    .story h2 { margin: 0 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: 1.5rem; }
+    .story p { font-family: Georgia, "Times New Roman", serif; font-size: 1.1rem; line-height: 1.75; margin: 0 0 1em; }
+    label { font-weight: 600; display: block; margin-bottom: 6px; }
+    .tips { color: var(--muted); font-size: 0.95rem; margin: 0 0 10px; padding-left: 20px; }
+    textarea {
+      width: 100%;
+      min-height: 170px;
+      padding: 12px;
+      font: inherit;
+      color: var(--ink);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      resize: vertical;
+    }
+    .name-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+    .name-row label { margin: 0; }
+    input[type=text] {
+      font: inherit; color: var(--ink); background: var(--card);
+      border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
+      flex: 1; min-width: 180px; max-width: 320px;
+    }
+    input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+    .count { color: var(--muted); font-size: 0.9rem; margin-left: auto; }
+    button {
+      font: inherit;
+      font-weight: 600;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: var(--accent-ink);
+      cursor: pointer;
+    }
+    button.secondary { background: transparent; color: var(--accent); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { color: var(--muted); font-style: italic; }
+    .error { color: var(--low); font-weight: 600; }
+    .result { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+    .badge {
+      flex: none;
+      width: 96px; height: 96px;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 2.2rem; font-weight: 800;
+      color: #fff;
+    }
+    .badge.g4, .badge.g3p { background: var(--good); }
+    .badge.g3, .badge.g2p { background: var(--mid); }
+    .badge.g2, .badge.g1 { background: var(--low); }
+    .result-body { flex: 1; min-width: 220px; }
+    .result-body h3 { margin: 0 0 6px; font-size: 1rem; }
+    .result-body ul { margin: 0 0 14px; padding-left: 20px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Summary Practice</h1>
+  <p class="sub">Read the story carefully, then write a summary in your own words.</p>
+
+  <div class="name-row">
+    <label for="name">Your name</label>
+    <input type="text" id="name" autocomplete="name" placeholder="First and last name" maxlength="80" />
+  </div>
+
+  <section class="card story" id="storyCard">
+    <p class="status" id="storyStatus">Loading a story…</p>
+    <h2 id="storyTitle" class="hidden"></h2>
+    <div id="storyText"></div>
+  </section>
+
+  <section class="card">
+    <label for="summary">Your summary</label>
+    <ul class="tips">
+      <li>Who is the main character, and what problem do they face?</li>
+      <li>What are the most important events, in order?</li>
+      <li>How does it end? Use your own words and skip small details.</li>
+    </ul>
+    <textarea id="summary" placeholder="Write your summary here…" disabled></textarea>
+    <div class="row">
+      <button id="submitBtn" disabled>Grade my summary</button>
+      <button id="newBtn" class="secondary">New story</button>
+      <span class="count" id="count">0 words</span>
+    </div>
+    <p id="gradeStatus" class="status hidden"></p>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <div class="result">
+      <div class="badge" id="badge"></div>
+      <div class="result-body">
+        <p id="feedback"></p>
+        <h3>What you did well</h3>
+        <ul id="strengths"></ul>
+        <h3>Next time, try</h3>
+        <ul id="improvements"></ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let current = null;
+  let busy = false;
+
+  function setBusy(on) {
+    busy = on;
+    $("submitBtn").disabled = on || !current;
+    $("newBtn").disabled = on;
+  }
+
+  function showError(el, msg) {
+    el.textContent = msg;
+    el.className = "error";
+  }
+
+  async function post(url, body) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Something went wrong.");
+    return data;
+  }
+
+  async function loadStory() {
+    if (busy) return;
+    setBusy(true);
+    current = null;
+    $("storyStatus").textContent = "Writing a new story for you… (this can take a few seconds)";
+    $("storyStatus").className = "status";
+    $("storyTitle").classList.add("hidden");
+    $("storyText").innerHTML = "";
+    $("resultCard").classList.add("hidden");
+    $("gradeStatus").classList.add("hidden");
+    $("summary").value = "";
+    $("summary").disabled = true;
+    updateCount();
+    try {
+      current = await post("/api/story", { exclude: readTitles() });
+      rememberTitle(current.title);
+      $("storyStatus").className = "hidden";
+      $("storyTitle").textContent = current.title;
+      $("storyTitle").classList.remove("hidden");
+      for (const para of current.story.split(/\n+/).filter((p) => p.trim())) {
+        const p = document.createElement("p");
+        p.textContent = para.trim();
+        $("storyText").appendChild(p);
+      }
+      $("summary").disabled = false;
+    } catch (err) {
+      showError($("storyStatus"), err.message + " Click “New story” to try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function grade() {
+    if (busy || !current) return;
+    const summary = $("summary").value.trim();
+    const name = $("name").value.trim();
+    const gs = $("gradeStatus");
+    if (!name) {
+      showError(gs, "Type your name at the top first so your teacher sees your grade.");
+      $("name").focus();
+      return;
+    }
+    if (summary.split(/\s+/).filter(Boolean).length < 5) {
+      showError(gs, "Write a little more first — a few sentences at least.");
+      return;
+    }
+    setBusy(true);
+    gs.textContent = "Reading your summary…";
+    gs.className = "status";
+    $("resultCard").classList.add("hidden");
+    // If the grader is busy with classmates' summaries, say so instead of looking frozen.
+    const lineTimer = setTimeout(() => {
+      gs.textContent = "Lots of classmates are submitting right now, so you're in line. Hang tight, this can take a few minutes. Don't close the page!";
+    }, 5000);
+    try {
+      const r = await post("/api/grade", { name, title: current.title, story: current.story, summary });
+      const badge = $("badge");
+      badge.textContent = r.grade;
+      badge.className = "badge g" + r.grade.replace("+", "p");
+      $("feedback").textContent = r.feedback;
+      fillList("strengths", r.strengths);
+      fillList("improvements", r.improvements);
+      $("resultCard").classList.remove("hidden");
+      gs.className = "hidden";
+      $("resultCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      showError(gs, err.message);
+    } finally {
+      clearTimeout(lineTimer);
+      setBusy(false);
+    }
+  }
+
+  // Remember which stories this browser has seen so "New story" doesn't repeat.
+  function readTitles() {
+    try { return JSON.parse(localStorage.getItem("seenStories") || "[]"); } catch { return []; }
+  }
+  function rememberTitle(title) {
+    try {
+      const seen = readTitles().filter((t) => t !== title);
+      seen.push(title);
+      localStorage.setItem("seenStories", JSON.stringify(seen.slice(-200)));
+    } catch {}
+  }
+
+  function fillList(id, items) {
+    const ul = $(id);
+    ul.innerHTML = "";
+    for (const item of items || []) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+  }
+
+  function updateCount() {
+    const n = $("summary").value.trim().split(/\s+/).filter(Boolean).length;
+    $("count").textContent = n + (n === 1 ? " word" : " words");
+  }
+
+  $("summary").addEventListener("input", updateCount);
+  try { $("name").value = localStorage.getItem("studentName") || ""; } catch {}
+  $("name").addEventListener("input", () => {
+    try { localStorage.setItem("studentName", $("name").value.trim()); } catch {}
+  });
+  $("submitBtn").addEventListener("click", grade);
+  $("newBtn").addEventListener("click", loadStory);
+  loadStory();
+</script>
+</body>
+</html>
