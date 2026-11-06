@@ -1,0 +1,26 @@
+{
+  "name": "reading-comp",
+  "version": "1.0.0",
+  "description": "7th-grade reading comprehension and summary practice, graded by Claude",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dt5093/Reading-Comp.git"
+  },
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dt5093/Reading-Comp/issues"
+  },
+  "homepage": "https://github.com/dt5093/Reading-Comp#readme",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "zod": "^4.6.7"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  }
+}
